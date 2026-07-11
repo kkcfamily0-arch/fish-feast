@@ -805,13 +805,13 @@ html&gt;body{padding:0}&lt;/style&gt;
       function rand(n) { const v=Math.sin(n * 9283.17)*43758.5453; return v-Math.floor(v); }
       function generateNearby() {
         const z = zoom();
-        const sizeScale = Math.pow(Math.max(1, player.size / 5), 0.28);
-        const cell = 76 * sizeScale;
+        const worldScale = Math.max(1, 1 / z);
+        const cell = 100 * worldScale;
         const cx = Math.floor(player.x / cell), cy = Math.floor(player.y / cell);
         const spanX = Math.max(5, Math.min(12, Math.ceil((canvas.clientWidth / z) / cell / 2) + 2));
         const spanY = Math.max(5, Math.min(12, Math.ceil((canvas.clientHeight / z) / cell / 2) + 2));
         const keepDistance = Math.max(canvas.clientWidth, canvas.clientHeight) / z * 1.12;
-        const safeDistance = Math.max(140, radius(player) * 5, cell * 1.6);
+        const safeDistance = Math.max(140, radius(player) * 4.5, cell * 0.45);
         for (const key of Array.from(spawned)) {
           const parts = key.split(',');
           const gx = Number(parts[0]), gy = Number(parts[1]);
@@ -825,7 +825,7 @@ html&gt;body{padding:0}&lt;/style&gt;
           const distance=Math.hypot(x-player.x,y-player.y);
           if (distance &lt; safeDistance) continue;
           const baseSize=Math.max(1, Math.round(player.size * (0.94 + (rand(seed+2)-.5)*0.08)));
-          const growth=Math.max(0, Math.floor(distance / (900 * sizeScale)));
+          const growth=Math.max(0, Math.floor(distance / (1200 * worldScale)));
           const size=Math.max(1, Math.round(baseSize + growth + (rand(seed+5)-.5) * Math.max(2, player.size * 0.08)));
           fishes.push({x,y,size,vx:(rand(seed+3)-.5)*.12,vy:(rand(seed+4)-.5)*.12});
         }
@@ -854,7 +854,7 @@ html&gt;body{padding:0}&lt;/style&gt;
         const drag = Math.hypot(joystick.dx, joystick.dy);
         if (joystick.active &amp;&amp; drag &gt; 6) {
           const strength = Math.min(1, (drag - 6) / 200);
-          const growthBoost = Math.min(5.5, Math.pow(Math.max(1, player.size / 5), 0.3));
+          const growthBoost = Math.min(7, Math.max(1, 1 / zoom()));
           const speed = (.26 + .72 * strength) * growthBoost;
           player.angle=Math.atan2(joystick.dy,joystick.dx); player.x += (joystick.dx / drag) * speed * 260 * dt; player.y += (joystick.dy / drag) * speed * 260 * dt;
         }
@@ -863,11 +863,10 @@ html&gt;body{padding:0}&lt;/style&gt;
           const f = fishes[i], dx = f.x - player.x, dy = f.y - player.y;
           if (Math.hypot(dx,dy) &lt; radius(f) * .75 + radius(player) * .7) {
             if (f.size &lt; player.size) {
-              const gain = f.size * Math.pow(5 / Math.max(5, player.size), 1.5);
-              player.size += gain;
+              player.size += f.size;
               player.mouth = performance.now() + 700;
               fishes.splice(i, 1);
-              sizeEl.textContent = Math.round(player.size * 10) / 10;
+              sizeEl.textContent = player.size;
               statusEl.textContent = `크기 ${f.size} 물고기를 먹었어요!`;
             } else {
               end(false);
