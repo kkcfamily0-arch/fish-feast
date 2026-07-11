@@ -800,17 +800,16 @@ html&gt;body{padding:0}&lt;/style&gt;
         canvas.width = Math.round(r.width * d); canvas.height = Math.round(r.height * d); ctx.setTransform(d,0,0,d,0,0);
       }
       function zoom() { const cap=Math.min(canvas.clientWidth,canvas.clientHeight)/(radius(player)*6.25); return Math.min(1, 5 / Math.sqrt(player.size), cap); }
-      function radius(f) { return 8 + f.size * 2.25; }
+      function radius(f) { return 19.25 + (f.size - 5) * 0.3; }
       function colorFor(size) { return palette[Math.min(palette.length-1, Math.floor(Math.log2(Math.max(1,size))))]; }
       function rand(n) { const v=Math.sin(n * 9283.17)*43758.5453; return v-Math.floor(v); }
       function generateNearby() {
-        const z = zoom();
-        const worldScale = Math.max(1, 1 / z);
-        const cell = 100 * worldScale;
+        const radiusScale = Math.max(1, radius(player) / 19.25);
+        const cell = 100 * radiusScale;
         const cx = Math.floor(player.x / cell), cy = Math.floor(player.y / cell);
-        const spanX = Math.max(5, Math.min(12, Math.ceil((canvas.clientWidth / z) / cell / 2) + 2));
-        const spanY = Math.max(5, Math.min(12, Math.ceil((canvas.clientHeight / z) / cell / 2) + 2));
-        const keepDistance = Math.max(canvas.clientWidth, canvas.clientHeight) / z * 1.12;
+        const spanX = Math.max(5, Math.min(12, Math.ceil(canvas.clientWidth / cell / 2) + 2));
+        const spanY = Math.max(5, Math.min(12, Math.ceil(canvas.clientHeight / cell / 2) + 2));
+        const keepDistance = Math.max(canvas.clientWidth, canvas.clientHeight) * radiusScale * 1.12;
         const safeDistance = Math.max(140, radius(player) * 4.5, cell * 0.45);
         for (const key of Array.from(spawned)) {
           const parts = key.split(',');
@@ -825,7 +824,7 @@ html&gt;body{padding:0}&lt;/style&gt;
           const distance=Math.hypot(x-player.x,y-player.y);
           if (distance &lt; safeDistance) continue;
           const baseSize=Math.max(1, Math.round(player.size * (0.94 + (rand(seed+2)-.5)*0.08)));
-          const growth=Math.max(0, Math.floor(distance / (1200 * worldScale)));
+          const growth=Math.max(0, Math.floor(distance / (1200 * radiusScale)));
           const size=Math.max(1, Math.round(baseSize + growth + (rand(seed+5)-.5) * Math.max(2, player.size * 0.08)));
           fishes.push({x,y,size,vx:(rand(seed+3)-.5)*.12,vy:(rand(seed+4)-.5)*.12});
         }
@@ -854,8 +853,8 @@ html&gt;body{padding:0}&lt;/style&gt;
         const drag = Math.hypot(joystick.dx, joystick.dy);
         if (joystick.active &amp;&amp; drag &gt; 6) {
           const strength = Math.min(1, (drag - 6) / 200);
-          const growthBoost = Math.min(7, Math.max(1, 1 / zoom()));
-          const speed = (.26 + .72 * strength) * growthBoost;
+          const radiusBoost = radius(player) / 19.25 / 2;
+          const speed = (.26 + .72 * strength) * radiusBoost;
           player.angle=Math.atan2(joystick.dy,joystick.dx); player.x += (joystick.dx / drag) * speed * 260 * dt; player.y += (joystick.dy / drag) * speed * 260 * dt;
         }
         generateNearby(); fishes.forEach(f=&gt;{ f.x+=f.vx*dt; f.y+=f.vy*dt; });
