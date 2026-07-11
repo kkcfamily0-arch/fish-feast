@@ -755,6 +755,7 @@ html&gt;body{padding:0}&lt;/style&gt;
     #fish-feast .game-top p { margin:0; }
     #fish-feast .game-area { position:relative; width:100%; aspect-ratio: 16 / 9; overflow:hidden; background:linear-gradient(135deg, color-mix(in srgb, var(--viz-series-1) 18%, var(--background)), color-mix(in srgb, var(--secondary) 72%, var(--background))); }
     #fish-feast canvas { width:100%; height:100%; display:block; touch-action:none; }
+    #fish-feast .restart-corner { position:absolute; top:10px; right:10px; z-index:2; }
     #fish-feast .overlay { position:absolute; inset:0; display:grid; place-items:center; text-align:center; padding:16px; background:color-mix(in srgb, var(--background) 64%, transparent); }
     #fish-feast .overlay[hidden] { display:none; }
     #fish-feast .overlay-content { display:grid; gap:10px; justify-items:center; }
@@ -765,6 +766,7 @@ html&gt;body{padding:0}&lt;/style&gt;
   &lt;/div&gt;
   &lt;div class=&quot;game-area&quot;&gt;
     &lt;canvas id=&quot;fish-canvas&quot; role=&quot;img&quot; aria-label=&quot;물고기 먹기 게임. 화면을 누른 뒤 손가락을 움직여 내 물고기의 이동 방향을 정하세요.&quot;&gt;&lt;/canvas&gt;
+    &lt;button id=&quot;fish-restart-corner&quot; type=&quot;button&quot; class=&quot;btn restart-corner&quot;&gt;다시 시작&lt;/button&gt;
     &lt;div id=&quot;fish-overlay&quot; class=&quot;overlay&quot; hidden&gt;
       &lt;div class=&quot;overlay-content&quot;&gt;
         &lt;strong id=&quot;fish-result&quot;&gt;게임 오버&lt;/strong&gt;
@@ -782,17 +784,14 @@ html&gt;body{padding:0}&lt;/style&gt;
       const overlay = root.querySelector(&#x27;#fish-overlay&#x27;);
       const resultEl = root.querySelector(&#x27;#fish-result&#x27;);
       const restart = root.querySelector(&#x27;#fish-restart&#x27;);
-      let player, fishes, running, last;
+      const cornerRestart = root.querySelector(&#x27;#fish-restart-corner&#x27;);
+      let player, fishes, spawned, running, last;
       let joystick = { active:false, x:0, y:0, dx:0, dy:0 };
       const palette = [&#x27;var(--viz-series-2)&#x27;, &#x27;var(--viz-series-3)&#x27;, &#x27;var(--viz-series-4)&#x27;, &#x27;var(--viz-series-5)&#x27;, &#x27;var(--viz-series-6)&#x27;];
       function css(name) { return getComputedStyle(root).getPropertyValue(name).trim(); }
       function reset() {
-        player = { x: .5, y: .5, size: 5 };
-        fishes = [2,3,4,6,7,9,12].map((size, i) =&gt; ({
-          size, x: .1 + ((i * .173) % .8), y: .12 + ((i * .293) % .72),
-          vx: (i % 2 ? 1 : -1) * (.035 + i * .006), vy: (i % 3 - 1) * .02,
-          color: palette[i % palette.length]
-        }));
+        player = { x: 0, y: 0, size: 5, mouth: 0, angle: 0 };
+        fishes = []; spawned = new Set(); generateNearby();
         running = true; last = performance.now(); overlay.hidden = true; sizeEl.textContent = player.size; statusEl.textContent = &#x27;작은 물고기를 먹으세요&#x27;;
         requestAnimationFrame(loop);
       }
@@ -800,12 +799,45 @@ html&gt;body{padding:0}&lt;/style&gt;
         const r = canvas.getBoundingClientRect(); const d = Math.min(devicePixelRatio || 1, 2);
         canvas.width = Math.round(r.width * d); canvas.height = Math.round(r.height * d); ctx.setTransform(d,0,0,d,0,0);
       }
+      function zoom() { const cap=Math.min(canvas.clientWidth,canvas.clientHeight)/(radius(player)*6.25); return Math.min(1, 5 / Math.sqrt(player.size), cap); }
       function radius(f) { return 8 + f.size * 2.25; }
+      function colorFor(size) { return palette[Math.min(palette.length-1, Math.floor(Math.log2(Math.max(1,size))))]; }
+      function rand(n) { const v=Math.sin(n * 9283.17)*43758.5453; return v-Math.floor(v); }
+      function generateNearby() {
+        const z = zoom();
+        const sizeScale = Math.pow(Math.max(1, player.size / 5), 0.28);
+        const cell = 76 * sizeScale;
+        const cx = Math.floor(player.x / cell), cy = Math.floor(player.y / cell);
+        const spanX = Math.max(5, Math.min(12, Math.ceil((canvas.clientWidth / z) / cell / 2) + 2));
+        const spanY = Math.max(5, Math.min(12, Math.ceil((canvas.clientHeight / z) / cell / 2) + 2));
+        const keepDistance = Math.max(canvas.clientWidth, canvas.clientHeight) / z * 1.12;
+        const safeDistance = Math.max(140, radius(player) * 5, cell * 1.6);
+        for (const key of Array.from(spawned)) {
+          const parts = key.split(',');
+          const gx = Number(parts[0]), gy = Number(parts[1]);
+          if (Math.abs(gx - cx) &gt; spanX + 4 || Math.abs(gy - cy) &gt; spanY + 4) spawned.delete(key);
+        }
+        for(let gy=cy-spanY;gy&lt;=cy+spanY;gy++) for(let gx=cx-spanX;gx&lt;=cx+spanX;gx++) {
+          const key=`${gx},${gy}`; if(spawned.has(key)) continue; spawned.add(key);
+          const seed=gx*73856093+gy*19349663, r=rand(seed); if(r&lt;.02) continue;
+          const x=(gx+r + (rand(seed+7)-.5)*.35)*cell;
+          const y=(gy+rand(seed+1)*.8 + (rand(seed+9)-.5)*.35)*cell;
+          const distance=Math.hypot(x-player.x,y-player.y);
+          if (distance &lt; safeDistance) continue;
+          const baseSize=Math.max(1, Math.round(player.size * (0.94 + (rand(seed+2)-.5)*0.08)));
+          const growth=Math.max(0, Math.floor(distance / (900 * sizeScale)));
+          const size=Math.max(1, Math.round(baseSize + growth + (rand(seed+5)-.5) * Math.max(2, player.size * 0.08)));
+          fishes.push({x,y,size,vx:(rand(seed+3)-.5)*.12,vy:(rand(seed+4)-.5)*.12});
+        }
+        fishes=fishes.filter(f=&gt;Math.hypot(f.x-player.x,f.y-player.y)&lt;keepDistance);
+      }
       function drawFish(f, mine=false) {
-        const w = canvas.clientWidth, h = canvas.clientHeight, r = radius(f), x = f.x*w, y=f.y*h;
-        const dir = mine ? 1 : Math.sign(f.vx || 1); ctx.save(); ctx.translate(x,y); ctx.scale(dir,1);
-        ctx.fillStyle = mine ? css(&#x27;--viz-series-1&#x27;) : css(f.color); ctx.beginPath(); ctx.ellipse(0,0,r*1.25,r*.72,0,0,Math.PI*2); ctx.fill();
+        const w = canvas.clientWidth, h = canvas.clientHeight, z=zoom(), r = radius(f)*z, x = w/2+(f.x-player.x)*z, y=h/2+(f.y-player.y)*z;
+        const dir = mine ? 1 : Math.sign(f.vx || 1); ctx.save(); ctx.translate(x,y); if(mine) ctx.rotate(player.angle); ctx.scale(dir,1);
+        ctx.fillStyle = mine ? &#x27;#f57c00&#x27; : css(colorFor(f.size)); ctx.beginPath(); ctx.ellipse(0,0,r*1.25,r*.72,0,0,Math.PI*2); ctx.fill();
+        if (mine) { ctx.save(); ctx.beginPath(); ctx.ellipse(0,0,r*1.25,r*.72,0,0,Math.PI*2); ctx.clip(); ctx.strokeStyle=&#x27;#fff&#x27;; ctx.lineWidth=Math.max(3,r*.18); [-r*.55,0,r*.58].forEach(x=&gt;{ctx.beginPath();ctx.moveTo(x,-r);ctx.lineTo(x,r);ctx.stroke();}); ctx.restore(); }
         ctx.beginPath(); ctx.moveTo(-r,0); ctx.lineTo(-r*1.8,-r*.75); ctx.lineTo(-r*1.8,r*.75); ctx.closePath(); ctx.fill();
+        if (mine) { const open=Math.max(.07,(player.mouth-performance.now())/700); ctx.fillStyle=&#x27;#3b2417&#x27;; ctx.beginPath(); ctx.moveTo(r*.55,0); ctx.lineTo(r*1.3,-r*.62*open); ctx.lineTo(r*1.3,r*.62*open); ctx.closePath(); ctx.fill(); }
         ctx.fillStyle = css(&#x27;--foreground&#x27;); ctx.beginPath(); ctx.arc(r*.55,-r*.2,Math.max(2,r*.12),0,Math.PI*2); ctx.fill();
         ctx.restore(); ctx.fillStyle=css(&#x27;--foreground&#x27;); ctx.font=&#x27;12px sans-serif&#x27;; ctx.textAlign=&#x27;center&#x27;; ctx.fillText(f.size, x, y-r-6);
       }
@@ -822,13 +854,26 @@ html&gt;body{padding:0}&lt;/style&gt;
         const drag = Math.hypot(joystick.dx, joystick.dy);
         if (joystick.active &amp;&amp; drag &gt; 6) {
           const strength = Math.min(1, (drag - 6) / 200);
-          const speed = .14 + .52 * strength;
-          player.x += (joystick.dx / drag) * speed * dt; player.y += (joystick.dy / drag) * speed * dt;
+          const growthBoost = Math.min(5.5, Math.pow(Math.max(1, player.size / 5), 0.3));
+          const speed = (.26 + .72 * strength) * growthBoost;
+          player.angle=Math.atan2(joystick.dy,joystick.dx); player.x += (joystick.dx / drag) * speed * 260 * dt; player.y += (joystick.dy / drag) * speed * 260 * dt;
         }
-        player.x=Math.max(.03,Math.min(.97,player.x)); player.y=Math.max(.06,Math.min(.94,player.y));
-        fishes.forEach(f=&gt;{ f.x+=f.vx*dt; f.y+=f.vy*dt; if(f.x&lt;.04||f.x&gt;.96) f.vx*=-1; if(f.y&lt;.07||f.y&gt;.93) f.vy*=-1; });
-        for(let i=fishes.length-1;i&gt;=0;i--) { const f=fishes[i], dx=(f.x-player.x)*canvas.clientWidth, dy=(f.y-player.y)*canvas.clientHeight; if(Math.hypot(dx,dy)&lt;radius(f)*.75+radius(player)*.7) { if(f.size &lt; player.size) { player.size+=f.size; fishes.splice(i,1); sizeEl.textContent=player.size; statusEl.textContent=`크기 ${f.size} 물고기를 먹었어요!`; } else { end(false); } } }
-        if(!fishes.length) end(true);
+        generateNearby(); fishes.forEach(f=&gt;{ f.x+=f.vx*dt; f.y+=f.vy*dt; });
+        for(let i=fishes.length-1;i&gt;=0;i--) {
+          const f = fishes[i], dx = f.x - player.x, dy = f.y - player.y;
+          if (Math.hypot(dx,dy) &lt; radius(f) * .75 + radius(player) * .7) {
+            if (f.size &lt; player.size) {
+              const gain = f.size * Math.pow(5 / Math.max(5, player.size), 1.5);
+              player.size += gain;
+              player.mouth = performance.now() + 700;
+              fishes.splice(i, 1);
+              sizeEl.textContent = Math.round(player.size * 10) / 10;
+              statusEl.textContent = `크기 ${f.size} 물고기를 먹었어요!`;
+            } else {
+              end(false);
+            }
+          }
+        }
         ctx.clearRect(0,0,canvas.clientWidth,canvas.clientHeight); fishes.forEach(f=&gt;drawFish(f)); drawFish(player,true); drawJoystick(); if(running) requestAnimationFrame(loop);
       }
       window.addEventListener(&#x27;resize&#x27;, resize);
@@ -837,7 +882,7 @@ html&gt;body{padding:0}&lt;/style&gt;
       canvas.addEventListener(&#x27;pointermove&#x27;, event =&gt; { if (!joystick.active) return; const p=point(event); joystick.dx=p.x-joystick.x; joystick.dy=p.y-joystick.y; event.preventDefault(); });
       const stopJoystick = event =&gt; { joystick.active=false; joystick.dx=0; joystick.dy=0; if (event) event.preventDefault(); };
       canvas.addEventListener(&#x27;pointerup&#x27;, stopJoystick); canvas.addEventListener(&#x27;pointercancel&#x27;, stopJoystick);
-      restart.addEventListener(&#x27;click&#x27;, reset); resize(); reset();
+      restart.addEventListener(&#x27;click&#x27;, reset); cornerRestart.addEventListener(&#x27;click&#x27;, reset); resize(); reset();
     })();
   &lt;/script&gt;
 &lt;/div&gt;
